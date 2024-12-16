@@ -1,93 +1,144 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 function Songlist() {
   const [row1, setRow1] = useState('');
   const [row2, setRow2] = useState('');
-  const [jsonObjectList, setJsonObjectList] = useState({}); // Estado alterado para um objeto
+  const [jsonObjectList, setJsonObjectList] = useState([]);
   const [selectedRows, setSelectedRows] = useState([]);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isLoginVisible, setIsLoginVisible] = useState(true);
-  const [listName, setListName] = useState('');
+  const [isLoginVisible, setIsLoginVisible] = useState(true); // State para visibilidade da área de login
+  const [listName, setListName] = useState(''); // State para armazenar o nome da lista
   const audioRef = useRef(null);
 
-  const handleAdd = () => {
-    if (row1.trim() && row2.trim()) {
-      setJsonObjectList(prevState => {
-        const updatedState = { ...prevState };
+  // !!!!!!! Substituímos o Axios por fetch para realizar as requisições HTTP ao backend.
 
-        if (!updatedState[listName]) {
-          // Se a chave do listName não existir, cria um novo array para a playlist
-          updatedState[listName] = [];
-        }
+  const checkPlaylistExists = async (name) => {
+    // !!!!!!! Esta função verifica se uma playlist já existe no banco de dados usando uma requisição GET com fetch. Retorna os dados se existir ou null caso contrário.
+    try {
+      const response = await fetch(`/api/playlists/${name}`);
+      if (!response.ok) {
+        throw new Error('Playlist não encontrada');
+      }
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Erro ao verificar a playlist:', error);
+      return null;
+    }
+  };
 
-        // Adiciona a nova música à lista correspondente ao listName
-        updatedState[listName].push({ row1, row2 });
-        return updatedState;
+  const createPlaylist = async (name, data) => {
+    // !!!!!!! cria uma nova playlist no banco de dados com o nome e dados fornecidos, enviando um POST 
+    try {
+      const response = await fetch('/api/playlists', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name, data }),
       });
+      if (!response.ok) {
+        throw new Error('Erro ao criar playlist');
+      }
+    } catch (error) {
+      console.error('Erro ao criar playlist:', error);
+    }
+  };
 
+  const updatePlaylist = async (name, data) => {
+    // !!!!!!! tualiza uma playlist existente no banco de dados usando uma requisição PUT 
+    try {
+      const response = await fetch(`/api/playlists/${name}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ data }),
+      });
+      if (!response.ok) {
+        throw new Error('Erro ao atualizar playlist');
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar playlist:', error);
+    }
+  };
+
+  const handleLoginSubmit = async () => {
+    // !!!!!!! verifica se a playlist fornecida no login já existe no banco. Se já existir, carrega os dados; caso contrário, cria uma nova playlist no banco de dados.
+    if (listName.trim()) {
+      try {
+        const existingPlaylist = await checkPlaylistExists(listName);
+        if (existingPlaylist) {
+          setJsonObjectList(existingPlaylist.data);
+        } else {
+          await createPlaylist(listName, []);
+          setJsonObjectList([]);
+        }
+        setIsLoginVisible(false);
+      } catch (error) {
+        alert('Erro ao processar a playlist');
+      }
+    } else {
+      alert('Por favor digite algo');
+    }
+  };
+
+  const [isLoading, setIsLoading] = useState(false); // Estado para controle do uso do botão
+
+  const handleAdd = async () => {
+    if (row1.trim() && row2.trim()) {
+      setIsLoading(true); // Ativa o estado de carregamento
+      const newList = [...jsonObjectList, { row1, row2 }];
+      setJsonObjectList(newList);
+      try {
+        await updatePlaylist(listName, newList);
+      } catch (error) {
+        alert('Erro ao adicionar música. Tente novamente.');
+      } finally {
+        setIsLoading(false); // Desativa o estado de carregamento
+      }
       setRow1('');
       setRow2('');
     } else {
       alert('Preencha todos os campos necessários');
     }
   };
+  
 
-  const handleRemove = (indexToRemove) => {
-    setJsonObjectList(prevState => {
-      const updatedState = { ...prevState };
+/*   const handleRemove = async (indexToRemove) => {
+    // !!!!!!! remove uma música específica da playlist e reflete essa alteração no banco de dados enviando a lista atualizada.
+    const updatedList = jsonObjectList.filter((_, index) => index !== indexToRemove);
+    setJsonObjectList(updatedList);
+    await updatePlaylist(listName, updatedList);
+  }; */
 
-      // Filtra a lista de músicas associada ao listName para remover o item
-      updatedState[listName] = updatedState[listName].filter((_, index) => index !== indexToRemove);
-      return updatedState;
-    });
-  };
-
-  const handleDeleteSelected = () => {
-    setJsonObjectList(prevState => {
-      const updatedState = { ...prevState };
-      
-      // Filtra as músicas da lista atual para remover as selecionadas
-      updatedState[listName] = updatedState[listName].filter((_, index) => !selectedRows.includes(index));
-
-      return updatedState;
-    });
-
-    setSelectedRows([]); // Reseta as seleções
+  const handleDeleteSelected = async () => {
+    // !!!!!!! exclui todas as músicas selecionadas da playlist e atualiza os dados no banco de dados com a nova lista.
+    const updatedList = jsonObjectList.filter((_, index) => !selectedRows.includes(index));
+    setJsonObjectList(updatedList);
+    setSelectedRows([]);
+    await updatePlaylist(listName, updatedList);
   };
 
   const handleCheckboxChange = (index) => {
     setSelectedRows((prevSelectedRows) =>
       prevSelectedRows.includes(index)
-        ? prevSelectedRows.filter((i) => i !== index) // Desmarcar
-        : [...prevSelectedRows, index] // Marcar
+        ? prevSelectedRows.filter((i) => i !== index) // De-selecionar
+        : [...prevSelectedRows, index] // Selecionar
     );
   };
 
-  const handlePlayPause = (url) => {
+  const handlePlayPause = (url) => { ///Pausa e despausa musica
     if (audioRef.current) {
       if (isPlaying && audioRef.current.src === url) {
-        // Para o áudio
         audioRef.current.pause();
         setIsPlaying(false);
       } else {
-        // Toca
         audioRef.current.src = url;
         audioRef.current.play();
         setIsPlaying(true);
       }
-    }
-  };
-
-  const handleLoginSubmit = () => {
-    if (listName.trim()) {
-      // Dá nome à lista
-      document.title = listName; // Muda nome da página
-
-      // Mostrar a página principal
-      setIsLoginVisible(false);
-    } else {
-      alert('Por favor digite algo');
     }
   };
 
@@ -131,7 +182,12 @@ function Songlist() {
               value={row2}
               onChange={(e) => setRow2(e.target.value)}
             />
-            <button className="btn btn-primary" onClick={handleAdd}>Adicionar à {listName}</button>
+            <button 
+            className="btn btn-primary" 
+            onClick={handleAdd} 
+            disabled={isLoading}>
+            {isLoading ? 'Adicionando...' : `Adicionar à ${listName}`}
+            </button>
           </div>
 
           <hr />
