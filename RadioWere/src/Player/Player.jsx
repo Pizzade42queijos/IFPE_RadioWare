@@ -1,6 +1,7 @@
 import 'bootstrap/dist/css/bootstrap.min.css'
 import React from 'react';
 import './Player.css';
+import { useParams } from 'react-router-dom';
 
 function Player() {
   return (
